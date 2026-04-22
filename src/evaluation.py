@@ -31,13 +31,17 @@ def hamming_loss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(mistakes.mean())
 
 
-def exact_match_accuracy(*args, **kwargs):
-    """TODO: implementar exact match accuracy si se decide usar esta metrica."""
-
-    raise NotImplementedError("TODO: implementar exact_match_accuracy().")
-
-
-def f1_multilabel(*args, **kwargs):
-    """TODO: implementar F1 multilabel cuando el curso lo requiera."""
-
-    raise NotImplementedError("TODO: implementar f1_multilabel().")
+# Las metricas adicionales se dejan comentadas a proposito.
+# La idea es que los alumnos habiliten estas funciones mas adelante,
+# una vez que comprendan el flujo minimo del experimento.
+#
+# def exact_match_accuracy(*args, **kwargs):
+#     """TODO: implementar exact match accuracy si se decide usar esta metrica."""
+#
+#     raise NotImplementedError("TODO: implementar exact_match_accuracy().")
+#
+#
+# def f1_multilabel(*args, **kwargs):
+#     """TODO: implementar F1 multilabel cuando el curso lo requiera."""
+#
+#     raise NotImplementedError("TODO: implementar f1_multilabel().")

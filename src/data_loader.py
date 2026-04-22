@@ -7,7 +7,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from .config import FEATURE_COLUMNS
+from config import FEATURE_COLUMNS
 
 
 def load_dataframe(data_path: str | Path) -> pd.DataFrame:
