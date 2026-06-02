@@ -1,47 +1,40 @@
 """Metricas para evaluar salidas multilabel."""
-
 import numpy as np
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 
 def apply_threshold(probabilities: np.ndarray, threshold: float = 0.5) -> np.ndarray:
     """Convierte probabilidades a etiquetas binarias usando un umbral fijo."""
-
     return (probabilities >= threshold).astype(np.float32)
 
 
 def hamming_loss(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Calcula Hamming loss.
-
-    La idea es simple:
-    - comparar cada componente del vector real con la predicha,
-    - contar cuantas componentes quedan distintas,
-    - y promediar ese error.
-    """
-
+    """Calcula Hamming loss."""
     y_true = np.asarray(y_true, dtype=np.float32)
     y_pred = np.asarray(y_pred, dtype=np.float32)
-
     if y_true.shape != y_pred.shape:
-        raise ValueError(
-            "y_true e y_pred deben tener la misma forma para calcular Hamming loss."
-        )
-
-    mistakes = np.not_equal(y_true, y_pred)
-    return float(mistakes.mean())
+        raise ValueError("y_true e y_pred deben tener la misma forma.")
+    return float(np.not_equal(y_true, y_pred).mean())
 
 
-# Las metricas adicionales se dejan comentadas a proposito.
-# La idea es que los alumnos habiliten estas funciones mas adelante,
-# una vez que comprendan el flujo minimo del experimento.
-#
-# def exact_match_accuracy(*args, **kwargs):
-#     """TODO: implementar exact match accuracy si se decide usar esta metrica."""
-#
-#     raise NotImplementedError("TODO: implementar exact_match_accuracy().")
-#
-#
-# def f1_multilabel(*args, **kwargs):
-#     """TODO: implementar F1 multilabel cuando el curso lo requiera."""
-#
-#     raise NotImplementedError("TODO: implementar f1_multilabel().")
+def exact_match_accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Exact match: solo cuenta como correcto si TODAS las etiquetas coinciden."""
+    y_true = np.asarray(y_true, dtype=np.float32)
+    y_pred = np.asarray(y_pred, dtype=np.float32)
+    return float(np.all(y_true == y_pred, axis=1).mean())
+
+
+def f1_multilabel(y_true: np.ndarray, y_pred: np.ndarray,
+                  average: str = "macro") -> float:
+    """F1 score para clasificacion multilabel."""
+    return float(f1_score(y_true, y_pred, average=average, zero_division=0))
+
+
+def precision_micro(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Precision Micro para clasificacion multilabel."""
+    return float(precision_score(y_true, y_pred, average="micro", zero_division=0))
+
+
+def recall_micro(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Recall Micro para clasificacion multilabel."""
+    return float(recall_score(y_true, y_pred, average="micro", zero_division=0))

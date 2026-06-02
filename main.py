@@ -27,7 +27,8 @@ from config import (  # noqa: E402
     DEFAULT_WEIGHT_DECAY,
 )
 from data_loader import CognitiveMultiLabelDataset, load_dataframe  # noqa: E402
-from evaluation import apply_threshold, hamming_loss  # noqa: E402
+from evaluation import apply_threshold, hamming_loss, exact_match_accuracy, f1_multilabel, precision_micro, recall_micro  # noqa: E402
+from uncertainty import enable_dropout_during_inference, mc_dropout_predict  # noqa: E402
 from models import ShallowMultiLabelNet  # noqa: E402
 from preprocessing import prepare_experiment_data, split_for_validation  # noqa: E402
 
@@ -138,8 +139,8 @@ def evaluate_with_hamming(
     loader: DataLoader,
     threshold: float,
     device: torch.device,
-) -> float:
-    """Evalua el modelo con Hamming Loss."""
+) -> dict:
+    """Evalua el modelo con Hamming Loss, Exact Match y F1."""
 
     model.eval()
     all_probabilities = []
@@ -150,14 +151,21 @@ def evaluate_with_hamming(
             inputs = inputs.to(device)
             logits = model(inputs)
             probabilities = torch.sigmoid(logits).cpu().numpy()
-
             all_probabilities.append(probabilities)
             all_targets.append(targets.numpy())
 
     probabilities_np = np.vstack(all_probabilities)
     targets_np = np.vstack(all_targets)
     predictions_np = apply_threshold(probabilities_np, threshold=threshold)
-    return hamming_loss(targets_np, predictions_np)
+
+    return {
+        "hamming_loss": hamming_loss(targets_np, predictions_np),
+        "exact_match": exact_match_accuracy(targets_np, predictions_np),
+        "f1_macro": f1_multilabel(targets_np, predictions_np, average="macro"),
+        "f1_micro": f1_multilabel(targets_np, predictions_np, average="micro"),
+        "precision_micro": precision_micro(targets_np, predictions_np),
+        "recall_micro": recall_micro(targets_np, predictions_np),
+    }
 
 
 def run_training_cycle(
@@ -205,17 +213,27 @@ def run_training_cycle(
         epoch_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
         history.append(epoch_loss)
 
-    eval_hamming = evaluate_with_hamming(
+    eval_metrics = evaluate_with_hamming(
         model,
         eval_loader,
         threshold=threshold,
         device=device,
     )
+    # Monte Carlo Dropout
+    eval_inputs = torch.tensor(X_eval, dtype=torch.float32).to(device)
+    mean_pred, uncertainty = mc_dropout_predict(model, eval_inputs, n_samples=30)
+    mean_uncertainty = float(uncertainty.mean().item())
 
     return {
         "model": model,
         "train_losses": history,
-        "hamming_loss": eval_hamming,
+        "hamming_loss": eval_metrics["hamming_loss"],
+        "exact_match": eval_metrics["exact_match"],
+        "f1_macro": eval_metrics["f1_macro"],
+        "f1_micro": eval_metrics["f1_micro"],
+        "precision_micro": eval_metrics["precision_micro"],
+        "recall_micro": eval_metrics["recall_micro"],
+        "uncertainty": mean_uncertainty,
         "final_train_loss": history[-1],
     }
 
@@ -282,28 +300,48 @@ def train_one_experiment(
             random_state=seed + outer_fold_index,
         )
 
-        inner_hamming_scores = []
-        # La validacion interna ya esta lista para que luego los alumnos
-        # agreguen comparacion de hiperparametros sin rehacer el flujo.
-        for inner_fold_index, (inner_train_idx, inner_val_idx) in enumerate(
-            inner_splits, start=1
+        from itertools import product as iterproduct
+
+        HYPERPARAM_GRID = {
+            "hidden_dim": [16, 32, 64],
+            "dropout":    [0.2, 0.3, 0.5],
+            "learning_rate": [1e-2, 1e-3],
+        }
+
+        best_config = None
+        best_inner_hamming = float("inf")
+
+        for hd, dr, lr in iterproduct(
+            HYPERPARAM_GRID["hidden_dim"],
+            HYPERPARAM_GRID["dropout"],
+            HYPERPARAM_GRID["learning_rate"],
         ):
-            inner_result = run_training_cycle(
-                X_train=X_outer_train[inner_train_idx],
-                Y_train=Y_outer_train[inner_train_idx],
-                X_eval=X_outer_train[inner_val_idx],
-                Y_eval=Y_outer_train[inner_val_idx],
-                hidden_dim=hidden_dim,
-                dropout=dropout,
-                learning_rate=learning_rate,
-                weight_decay=weight_decay,
-                batch_size=batch_size,
-                epochs=epochs,
-                threshold=threshold,
-                seed=seed + outer_fold_index * 100 + inner_fold_index,
-                device=device,
-            )
-            inner_hamming_scores.append(inner_result["hamming_loss"])
+            fold_scores = []
+            for inner_fold_index, (inner_train_idx, inner_val_idx) in enumerate(
+                inner_splits, start=1
+            ):
+                inner_result = run_training_cycle(
+                    X_train=X_outer_train[inner_train_idx],
+                    Y_train=Y_outer_train[inner_train_idx],
+                    X_eval=X_outer_train[inner_val_idx],
+                    Y_eval=Y_outer_train[inner_val_idx],
+                    hidden_dim=hd,
+                    dropout=dr,
+                    learning_rate=lr,
+                    weight_decay=weight_decay,
+                    batch_size=batch_size,
+                    epochs=epochs,
+                    threshold=threshold,
+                    seed=seed + outer_fold_index * 100 + inner_fold_index,
+                    device=device,
+                )
+                fold_scores.append(inner_result["hamming_loss"])
+            mean_score = float(np.mean(fold_scores))
+            if mean_score < best_inner_hamming:
+                best_inner_hamming = mean_score
+                best_config = {"hidden_dim": hd, "dropout": dr, "learning_rate": lr}
+
+        inner_hamming_scores = [best_inner_hamming]
 
         # En la plantilla minima no se elige entre varias configuraciones;
         # se reentrena la misma red con todo el fold externo de entrenamiento.
@@ -312,9 +350,9 @@ def train_one_experiment(
             Y_train=Y_outer_train,
             X_eval=X_outer_test,
             Y_eval=Y_outer_test,
-            hidden_dim=hidden_dim,
-            dropout=dropout,
-            learning_rate=learning_rate,
+            hidden_dim=best_config["hidden_dim"],
+            dropout=best_config["dropout"],
+            learning_rate=best_config["learning_rate"],
             weight_decay=weight_decay,
             batch_size=batch_size,
             epochs=epochs,
@@ -329,6 +367,12 @@ def train_one_experiment(
                 "inner_hamming_mean": float(np.mean(inner_hamming_scores)),
                 "inner_hamming_std": float(np.std(inner_hamming_scores)),
                 "outer_hamming_loss": final_result["hamming_loss"],
+                "outer_exact_match": final_result["exact_match"],
+                "outer_f1_macro": final_result["f1_macro"],
+                "outer_uncertainty": final_result["uncertainty"],
+                "outer_f1_micro": final_result["f1_micro"],
+                "outer_precision_micro": final_result["precision_micro"],
+                "outer_recall_micro": final_result["recall_micro"],
                 "final_train_loss": final_result["final_train_loss"],
             }
         )
@@ -489,10 +533,14 @@ def main() -> None:
     for fold_result in results["outer_folds"]:
         print(
             f"Fold externo {fold_result['outer_fold']}: "
-            f"Hamming interno = {fold_result['inner_hamming_mean']:.4f} "
-            f"+/- {fold_result['inner_hamming_std']:.4f}, "
-            f"Hamming externo = {fold_result['outer_hamming_loss']:.4f}, "
-            f"loss final de entrenamiento = {fold_result['final_train_loss']:.4f}"
+            f"Hamming = {fold_result['outer_hamming_loss']:.4f}, "
+            f"Exact Match = {fold_result['outer_exact_match']:.4f}, "
+            f"F1 macro = {fold_result['outer_f1_macro']:.4f}, "
+            f"F1 micro = {fold_result['outer_f1_micro']:.4f}, "
+            f"Precision = {fold_result['outer_precision_micro']:.4f}, "
+            f"Recall = {fold_result['outer_recall_micro']:.4f}, "
+            f"Uncertainty = {fold_result['outer_uncertainty']:.4f}, "
+            f"loss = {fold_result['final_train_loss']:.4f}"
         )
 
     print("TODO: agregar mas metricas, busqueda de hiperparametros e incertidumbre.")
