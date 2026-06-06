@@ -1,122 +1,77 @@
-# Lab02-DL-2026-01
+# Laboratorio 02 — Deep Learning UCN
+## Redes Neuronales Poco Profundas para el Estudio del Deterioro Cognitivo
 
-Proyecto base para el Laboratorio 02 de Deep Learning.
+**Asignatura:** Deep Learning  
+**Profesor:** Dr. Juan Bekios Calfa  
+**Autores:** Claudio Vallejos, José Meléndez  
+**Universidad Católica del Norte**
 
-La idea del laboratorio, siguiendo la presentacion, es tratar el problema como
-seis experimentos independientes:
+---
 
-- `GDS`
-- `GDS_R1`
-- `GDS_R2`
-- `GDS_R3`
-- `GDS_R4`
-- `GDS_R5`
+## Descripción
 
-Cada experimento toma una sola columna objetivo y la transforma a formato
-one-hot. Esta version deja una base minima para que los estudiantes puedan
-ejecutar un experimento completo antes de ampliar el laboratorio.
+Este laboratorio implementa redes neuronales poco profundas en PyTorch para estudiar el deterioro cognitivo mediante seis experimentos independientes, uno por cada variable objetivo (GDS, GDS_R1, GDS_R2, GDS_R3, GDS_R4, GDS_R5), codificadas como vectores multilabel tipo one-hot.
 
-## Que esta implementado
+## Estructura del Proyecto
 
-- Carga basica de datos desde `csv` o `sav`
-- Seleccion de columnas de entrada
-- Codificacion one-hot del target activo
-- `Dataset` de PyTorch
-- Red neuronal poco profunda
-- Entrenamiento base con `BCEWithLogitsLoss`
-- Validacion anidada minima con folds internos y externos
-- `hamming_loss` para evaluar predicciones multilabel
+    Lab02-DL-2026-01/
+    ├── main.py                  # Punto de entrada principal
+    ├── run_all_experiments.py   # Compara los 6 experimentos
+    ├── predict_examples.py      # Ejemplos de prediccion con incertidumbre
+    ├── dataset/
+    │   └── deterioro_cognitivo.sav
+    ├── src/
+    │   ├── config.py            # Configuracion y valores por defecto
+    │   ├── data_loader.py       # Carga del dataset
+    │   ├── preprocessing.py     # Transformaciones y validacion cruzada
+    │   ├── models.py            # Red neuronal en PyTorch
+    │   ├── evaluation.py        # Metricas multilabel
+    │   └── uncertainty.py       # Monte Carlo Dropout
+    ├── environment.yml
+    └── README.md
 
-## Que queda como TODO
+## Instalación
 
-- Busqueda de hiperparametros dentro de la validacion interna
-- Metricas adicionales
-  En esta version solo queda activa `hamming_loss`. Las otras metricas se dejan
-  comentadas en `src/evaluation.py` para que los alumnos las implementen luego.
-- Algoritmo de incertidumbre con Monte Carlo Dropout
-- Comparacion entre los seis experimentos
+    conda env create -f environment.yml
+    conda activate lab_pytorch
 
-## Estructura
+## Uso
 
-```text
-Lab02-DL-2026-01/
-|-- dataset/
-|   `-- README.md
-|-- src/
-|   |-- __init__.py
-|   |-- config.py
-|   |-- data_loader.py
-|   |-- evaluation.py
-|   |-- models.py
-|   |-- preprocessing.py
-|   `-- uncertainty.py
-|-- main.py
-|-- .gitignore
-|-- environment.yml
-`-- README.md
-```
+### Ejecutar un experimento individual
 
-## Uso esperado
+    python main.py --data-path dataset/deterioro_cognitivo.sav --target-name GDS_R2 --epochs 50
 
-1. Copiar el dataset dentro de `dataset/`.
-2. Activar el entorno del proyecto.
-3. Ejecutar un experimento base.
+### Comparar todos los experimentos
 
-```bash
-python main.py --data-path dataset/archivo.csv --target-name GDS_R2
-```
+    python run_all_experiments.py
 
-Ese comando:
+### Ver ejemplos de predicción con incertidumbre
 
-- carga el dataset,
-- prepara `X` y `Y`,
-- entrena una red neuronal poco profunda,
-- aplica validacion externa con folds estratificados,
-- aplica validacion interna dentro de cada fold externo,
-- y reporta `Hamming Loss` como metrica minima.
+    python predict_examples.py
 
-## Flujo implementado en esta version minima
+## Características Implementadas
 
-La implementacion sigue la idea general mostrada en la presentacion:
+- Codificacion multilabel tipo one-hot
+- Red neuronal poco profunda con PyTorch (ShallowMultiLabelNet)
+- Validacion cruzada anidada (5 folds externos, 3 internos)
+- Grid search de hiperparametros (hidden_dim, dropout, learning_rate)
+- Metricas multilabel: Hamming Loss, Exact Match, F1 Macro, F1 Micro, Precision Micro, Recall Micro
+- Monte Carlo Dropout para estimacion de incertidumbre
 
-1. Elegir una columna objetivo, por ejemplo `GDS_R2`.
-2. Transformarla a formato one-hot.
-3. Crear `5` folds externos estratificados para evaluacion final.
-4. Crear `3` folds internos dentro de cada entrenamiento externo.
-5. Entrenar la misma configuracion base en cada fold.
-6. Reportar `Hamming Loss` en validacion interna y prueba externa.
+## Resultados
 
-La busqueda de hiperparametros todavia no se implementa. Se deja asi a
-proposito para que los alumnos puedan entender primero el flujo minimo y luego
-extenderlo.
+| Target | Clases | Hamming Mean | Hamming Std |
+|--------|--------|--------------|-------------|
+| GDS_R1 | 3      | 0.0697       | 0.0162      |
+| GDS_R2 | 3      | 0.1853       | 0.0184      |
+| GDS_R3 | 2      | 0.0929       | 0.0248      |
+| GDS_R4 | 3      | 0.1141       | 0.0068      |
+| GDS_R5 | 3      | 0.1510       | 0.0087      |
 
-## Argumentos utiles
+## Hiperparámetros Explorados
 
-- `--data-path`: ruta al archivo `csv` o `sav`.
-- `--target-name`: experimento a ejecutar. Por defecto `GDS_R2`.
-- `--hidden-dim`: neuronas de la capa oculta.
-- `--dropout`: dropout de la red.
-- `--learning-rate`: learning rate de Adam.
-- `--weight-decay`: weight decay de Adam.
-- `--batch-size`: batch size de entrenamiento.
-- `--epochs`: epocas por fold.
-- `--threshold`: umbral para convertir probabilidades en etiquetas.
-- `--outer-folds`: folds externos. Por defecto `5`.
-- `--inner-folds`: folds internos. Por defecto `3`.
-- `--device`: `cpu`, `cuda` o `auto`.
-
-Para una primera prueba rapida conviene bajar las epocas:
-
-```bash
-python main.py --data-path dataset/archivo.csv --target-name GDS_R2 --epochs 5
-```
-
-## Plan sugerido para alumnos
-
-1. Comprender el problema y revisar las columnas del dataset.
-2. Elegir un experimento objetivo, por ejemplo `GDS_R2`.
-3. Verificar la codificacion one-hot del target y la validacion base.
-4. Agregar nuevas metricas ademas de `Hamming Loss`.
-5. Incorporar busqueda de hiperparametros en la validacion interna.
-6. Comparar resultados entre experimentos.
-7. Implementar incertidumbre al final del laboratorio.
+| Hiperparametro | Valores       |
+|----------------|---------------|
+| Hidden Dim     | 16, 32, 64    |
+| Dropout        | 0.2, 0.3, 0.5 |
+| Learning Rate  | 1e-2, 1e-3    |
